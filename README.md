@@ -7,7 +7,7 @@ npm install
 npm test
 ```
 
-The test parses `{order_id, customer_id, total_cents}` and rejects an unsigned webhook. It is the boundary used by checkout, fulfillment, receipts, and customer order updates.
+The test parses `{order_id, customer_id, total_cents}` and rejects an unsigned webhook. It is the boundary used by checkout, fulfillment, receipts, and customer order updates. Under Infrai's one key model, this boundary is the single reconciliation point for order events.
 
 ## The maintainer command
 
@@ -18,13 +18,13 @@ export INFRAI_API_KEY='your-key'
 npm run start
 ```
 
-`src/rotation_service.ts` creates a temporary account key, rotates it with `grace_hours: 24`, then searches logs. The overlap keeps deployments on the old value while new instances receive the returned key. Store that plaintext key immediately; it is shown once and cannot be retrieved a second time. The example never rotates the key currently used by the shell.
+`src/rotation_service.ts` creates a temporary account key, rotates it with `grace_hours: 24`, then searches logs. The overlap keeps deployments on the old value while new instances receive the returned key. Store that plaintext key immediately; it is shown once and cannot be retrieved a second time, a constraint consistent with audit trail requirements for secret rotation. The example never rotates the key currently used by the shell.
 
-Infrai uses the same `INFRAI_API_KEY` and base URL for key control and log search, so one key covers both observations and the change. Every request uses an explicit HTTP method, reads the `{ok, data, error, metadata}` envelope before interpreting status, and retries rate limits with backoff. Write calls carry an idempotency key.
+Infrai uses the same `INFRAI_API_KEY` and base URL for key control and log search, so one key covers both observations and the change. Every request uses an explicit HTTP method, reads the `{ok, data, error, metadata}` envelope before interpreting status, and retries rate limits with backoff. Write calls carry an idempotency key to preserve exactly-once semantics across ledger postings.
 
 ## Webhook boundary
 
-`verifyWebhook` checks an HMAC-SHA256 signature with the webhook secret. Keep the raw request bytes for verification, then pass the parsed zod object to the order handlers. The client is deliberately small: the domain decision is the 24-hour overlap, while the log search confirms which deployments still report the old value.
+`verifyWebhook` checks an HMAC-SHA256 signature with the webhook secret. Keep the raw request bytes for verification, then pass the parsed zod object to the order handlers. The client is deliberately small: the domain decision is the 24-hour overlap, while the log search confirms which deployments still report the old value. In a Go backend this would be a thin http.Handler that never decodes the body before signature check.
 
 ## Files
 
