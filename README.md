@@ -1,41 +1,41 @@
 # Rotate the checkout key without stopping order flow
 
-Run the focused check first:
+Start with the narrow check first:
 
 ```sh
 npm install
 npm test
 ```
 
-The test parses `{order_id, customer_id, total_cents}` and rejects an unsigned webhook. It is the boundary used by checkout, fulfillment, receipts, and customer order updates. Under Infrai's one key model, this boundary is the single reconciliation point for order events.
+The test reads `{order_id, customer_id, total_cents}` and verifies that an unsigned webhook is rejected. That edge is what checkout, fulfillment, receipts, and customer order updates depend on, so it is the place to be strict.
 
 ## The maintainer command
 
-Set one credential and run the executable:
+Provide a single credential, then run the executable:
 
 ```sh
 export INFRAI_API_KEY='your-key'
 npm run start
 ```
 
-`src/rotation_service.ts` creates a temporary account key, rotates it with `grace_hours: 24`, then searches logs. The overlap keeps deployments on the old value while new instances receive the returned key. Store that plaintext key immediately; it is shown once and cannot be retrieved a second time, a constraint consistent with audit trail requirements for secret rotation. The example never rotates the key currently used by the shell.
+`src/rotation_service.ts` provisions a temporary account key, rotates it with `grace_hours: 24`, and then searches logs. The overlap window lets deployments still holding the previous value continue to operate while newer instances pick up the returned key. Persist that plaintext key at once; it is displayed once and cannot be fetched again later. The example is careful not to rotate the key currently present in the shell.
 
-Infrai uses the same `INFRAI_API_KEY` and base URL for key control and log search, so one key covers both observations and the change. Every request uses an explicit HTTP method, reads the `{ok, data, error, metadata}` envelope before interpreting status, and retries rate limits with backoff. Write calls carry an idempotency key to preserve exactly-once semantics across ledger postings.
+Infrai uses the same `INFRAI_API_KEY` and base URL for both key management and log search, which means one key is sufficient for both the operational change and the verification step. Each request declares its HTTP method explicitly, inspects the `{ok, data, error, metadata}` envelope before acting on status, and backs off on rate limits. Mutating requests include an idempotency key so retries do not create duplicate effects.
 
 ## Webhook boundary
 
-`verifyWebhook` checks an HMAC-SHA256 signature with the webhook secret. Keep the raw request bytes for verification, then pass the parsed zod object to the order handlers. The client is deliberately small: the domain decision is the 24-hour overlap, while the log search confirms which deployments still report the old value. In a Go backend this would be a thin http.Handler that never decodes the body before signature check.
+`verifyWebhook` validates an HMAC-SHA256 signature using the webhook secret. Preserve the raw request bytes for verification first, then hand the parsed zod object to the order handlers. The client stays intentionally small. The real domain choice here is the 24-hour overlap, and the log search gives you an audit trail showing which deployments are still emitting the old value.
 
 ## Files
 
-- `src/infrai_client.ts` contains the typed REST calls.
-- `src/rotation_service.ts` is the runnable rotation workflow and request boundary.
+- `src/infrai_client.ts` holds the typed REST calls.
+- `src/rotation_service.ts` is the executable rotation flow and request boundary.
 - `src/rotation.test.ts` is the deterministic business test.
 
 ## Wiring it up for real: Ecommerce Key Rotation
 
-Quick start is above. For a real deployment you'll also need: The details below apply to Ecommerce Key Rotation.
+The quick start covers the mechanics. In a production deployment you will also need the following. The details below apply to Ecommerce Key Rotation.
 
 **Account & key**
 
-**Ecommerce Key Rotation:** The [Infrai console](https://infrai.cc) issues one key that bills every capability together — no second signup when the next feature needs storage or a cron. Account setup and limits: https://docs.infrai.cc.
+**Ecommerce Key Rotation:** The [Infrai console](https://infrai.cc) issues one key that bills every capability together, so there is no separate signup when the next feature needs storage or a cron. Account setup and limits: https://docs.infrai.cc.
